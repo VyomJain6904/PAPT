@@ -65,7 +65,7 @@ source ~/.bashrc
 
 ![PAPT fremove](/assets/fremove.png)
 
-### PAPT fshow :
+### PAPT verify :
 
 ![PAPT verify](/assets/verify.png)
 
@@ -94,6 +94,6 @@ source ~/.bashrc
 
 | Feature                        | Depends On                                |
 | ------------------------------ | ----------------------------------------- |
-| `finstall`, `fremove`, `fshow` | `fzf`, `batcat`   |
+| `finstall`, `fremove`, `fshow` | `fzf`, `batcat`                           |
 | Snapshot / Rollback            | Root access + `/var/log` write permission |
 | GitHub Install                 | `git` + `make` (if building from source)  |
