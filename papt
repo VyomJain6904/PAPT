@@ -114,7 +114,7 @@ get_color_for_command() {
     upgrade|dist-upgrade|full-upgrade)
       echo "$YELLOW"
       ;;
-    remove|purge|autoremove|fremove)
+    remove|purge|autoremove|fremove|autoclean)
       echo "$RED"
       ;;
     *)
@@ -125,9 +125,21 @@ get_color_for_command() {
 
 needs_progress_bar() {
   local cmd="$1"
+  local packages="$2"
+
   case "$cmd" in
-    install|reinstall|remove|purge|autoremove|update|upgrade|dist-upgrade|full-upgrade|finstall|fremove)
+    install|reinstall|remove|purge|autoremove|autoclean)
       return 0
+      ;;
+    upgrade|dist-upgrade|full-upgrade)
+      [[ -n "$packages" ]] && return 0
+      return 1
+      ;;
+    finstall|fremove)
+      return 0
+      ;;
+    update)
+      return 1
       ;;
     *)
       return 1
@@ -831,7 +843,8 @@ run_apt_command() {
   shift
   local packages="$@"
   local color=$(get_color_for_command "$command")
-  local apt_cmd="apt-get -y --allow-downgrades"
+  local apt_cmd="apt-get"
+  local apt_status=0
 
   if [[ "$command" == "install" || "$command" == "remove" ]]; then
     if [[ -z "$packages" ]]; then
@@ -840,30 +853,25 @@ run_apt_command() {
       return 1
     fi
 
-    if [[ "$command" == "install" || "$command" == "remove" ]]; then
-        local snapshot_file=$(create_snapshot)
-    fi
+    local snapshot_file=$(create_snapshot)
   fi
 
-  if needs_progress_bar "$command"; then
-    if [[ "$command" == "update" ]]; then
-        apt-get update 2> "$ERR_FILE"
-        local apt_status=$?
-    else
-        "$apt_cmd" "$command" "$packages" > "$LOG_FILE" 2> "$ERR_FILE" &
-        local pid=$!
-        animate_progress "$pid" "$color"
-        wait "$pid"
-        local apt_status=$?
-    fi
+  if needs_progress_bar "$command" "$packages"; then
+    "$apt_cmd" "$command" "$packages" > "$LOG_FILE" 2> "$ERR_FILE" &
+    local pid=$!
+    animate_progress "$pid" "$color"
+    wait "$pid"
+    apt_status=$?
+  elif [[ "$command" == "search" ]]; then
+    apt_search_wrapper "$@"
+    apt_status=$?
+  elif [[ "$command" == "update" ]]; then
+    apt-get update 2> "$ERR_FILE"
+    apt_status=$?
   else
-    if [[ "$command" == "search" ]]; then
-        apt_search_wrapper "$@"
-        local apt_status=$?
-    else
-        apt "$command" "$packages"
-        local apt_status=$?
-    fi
+    printf "%bRunning command: %s %s%b\n" "$CYAN" "$command" "$packages" "$RESET"
+    "$apt_cmd" "$command" -y "$packages"
+    apt_status=$?
   fi
 
   if [[ "$command" == "show" || "$command" == "list" || "$command" == "search" ]]; then
@@ -883,7 +891,7 @@ run_apt_command() {
 
 if [[ $EUID -ne 0 ]]; then
   case "$1" in
-    install|reinstall|remove|purge|autoremove|update|upgrade|full-upgrade|dist-upgrade|rollback|github|edit-sources)
+    install|reinstall|remove|purge|autoremove|autoclean|update|upgrade|full-upgrade|dist-upgrade|rollback|github|edit-sources)
       printf "%bError: This command requires root privileges. Please run with 'sudo papt ...'%b\n" "$RED" "$RESET" >&2
       exit 1
       ;;
@@ -952,7 +960,7 @@ case "$COMMAND" in
         printf "%bfzf is not installed. Install it first: sudo papt install fzf%b\n" "$RED" "$RESET"
         exit 1
     fi
-    local selected_pkg=$(apt-cache pkgnames | command fzf \
+    selected_pkg=$(apt-cache pkgnames | command fzf \
         --prompt='Select package to SHOW ❯ ' \
         --preview='apt-cache show {} 2>/dev/null | batcat --style=numbers --color=always -l yaml || apt-cache show {} 2>/dev/null' \
         --preview-window='right:65%:wrap')
@@ -963,7 +971,7 @@ case "$COMMAND" in
         printf "%bNo package selected.%b\n" "$YELLOW" "$RESET"
     fi
     ;;
-  install|reinstall|remove|purge|autoremove|update|upgrade|full-upgrade|dist-upgrade|list|show|edit-sources|satisfy|search)
+  install|reinstall|remove|purge|autoremove|autoclean|update|upgrade|full-upgrade|dist-upgrade|list|show|edit-sources|satisfy|search)
     run_apt_command "$COMMAND" "$@"
     ;;
   *)
